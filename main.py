@@ -1,35 +1,83 @@
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from models import Product
-
+from database import session, engine
+import database_models 
+from sqlalchemy.orm import Session
 
 app = FastAPI()
 
+
+database_models.Base.metadata.create_all(bind=engine) #This Line creates the table for you in PostGress
+
+
 @app.get("/")
 def greet():
-    return "Hello world"
+    return "Welcome Mudi"
 
-# list of products with 4 products like phones, laptops, pens, tables
+
 products = [
-    Product(id=1, name="Phone", description="A smartphone", price=699.99, quantity=50),
-    Product(id=2, name="Laptop", description="A powerful laptop", price=999.99, quantity=30),
-    Product(id=3, name="Pen", description="A blue ink pen", price=1.99, quantity=100),
-    Product(id=4, name="Table", description="A wooden table", price=199.99, quantity=20),
-]
+    Product(id=1, name="Phone", description="Budget Phone", price= 299.9, quantity=20),
+            Product(id=2, name="CellPhone", description="Budget Phone", price= 89999.9, quantity=200),
+            Product(id=3, name="Phone", description="Budget Phone", price= 899.9, quantity=200),
+            Product(id=4, name="Cell", description="Budget Phone", price= 20.0, quantity=200)
+            ]
 
-@app.get("/products/")
-def get_all_products():
-    return products
+def get_db():
+    db = session()
+    try:
+        yield db
+    finally:
+        db.close()
 
+def init_db():
+    db = session()
+    count = db.query(database_models.Product).count()
 
-@app.get("/products/{product_id}")
-def get_product_by_id(product_id: int):
-    for product in products:
-        if product.id == product_id:
-            return product
-    return {"error": "Product not found"}
+    if count == 0:
+        for product in products:
+            db.add(database_models.Product(**product.model_dump()))
+        db.commit()
 
-@app.post("/products/")
-def create_product(product: Product):
-    products.append(product)
-    return {"message": "Product created successfully", "product": product}
-    
+init_db()
+
+@app.get("/products")
+def get_all_products(db: Session = Depends(get_db)):
+
+    db_products = db.query(database_models.Product).all()
+    return db_products
+
+@app.get("/product/{id}")
+def get_all_products_by_id(id: int, db: Session = Depends(get_db)):
+    db_products = db.query(database_models.Product).filter(database_models.Product.id == id).first()
+    if db_products: 
+        return  db_products
+    return "product not found"
+
+@app.post("/product")
+def add_product(product: Product, db: Session = Depends(get_db)):
+    db.add(database_models.Product(**product.model_dump()))
+    db.commit()
+    return product
+
+@app.put("/product")
+def update_product(id: int, product: Product, db: Session = Depends(get_db)):
+    db_products = db.query(database_models.Product).filter(database_models.Product.id == id).first()
+    if db_products:
+        db_products.name = product.name
+        db_products.description = product.description
+        db_products.price = product.price
+        db_products.quantity = product.quantity
+        db.commit()
+        return "Product Updated"
+    else:
+        return "product not found"
+
+@app.delete("/product")
+def delete_product(id: int,  db: Session = Depends(get_db)):
+    db_products = db.query(database_models.Product).filter(database_models.Product.id == id).first()
+    if db_products:
+        db.delete(db_products)
+        db.commit()  
+        return "product deleted "
+    else:
+        return "product not found"
